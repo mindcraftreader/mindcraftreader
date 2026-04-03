@@ -36,12 +36,14 @@ export function PretextBlock({
       if (width <= 0) return;
 
       try {
-        const pretext = await import("@chenglou/pretext");
-        const prepared = pretext.prepare(text, font);
-        const laid = pretext.layout(prepared, width);
+        const { prepareWithSegments, layoutWithLines } = await import(
+          "@chenglou/pretext"
+        );
+        const prepared = prepareWithSegments(text, font);
+        const result = layoutWithLines(prepared, width, lineHeight);
 
         if (!cancelled) {
-          setLines(laid.map((line: { text: string }) => line.text));
+          setLines(result.lines.map((line) => line.text));
         }
       } catch {
         // pretext not available — fall back to browser text layout
@@ -62,7 +64,7 @@ export function PretextBlock({
       cancelled = true;
       observer.disconnect();
     };
-  }, [text, font]);
+  }, [text, font, lineHeight]);
 
   return (
     <div ref={containerRef} className={className} style={{ lineHeight }}>
