@@ -117,7 +117,27 @@ export const create = mutation({
       updatedAt: now,
     });
 
+    // Load all data sources for this market
+    const allSources = await ctx.db
+      .query("marketSources")
+      .withIndex("by_market", (q) => q.eq("marketId", market._id))
+      .collect();
+
     for (const sectionType of sections) {
+      // Get data sources relevant to this section
+      const sectionSources = allSources
+        .filter((s) => s.sectionType === sectionType && s.enabled)
+        .sort((a, b) => a.priority - b.priority)
+        .map((s) => ({
+          name: s.sourceName,
+          url: s.sourceUrl,
+          plugin: s.plugin,
+          category: s.category,
+          selectors: s.selectors ? JSON.parse(s.selectors) : undefined,
+          apiParams: s.apiParams ? JSON.parse(s.apiParams) : undefined,
+          notes: s.notes,
+        }));
+
       await ctx.db.insert("sectionJobs", {
         pipelineRunId: runId,
         marketId: market._id,
@@ -135,8 +155,11 @@ export const create = mutation({
           state: market.state,
           county: market.county,
           timezone: market.timezone,
+          zipCodes: market.zipCodes,
+          nearbyCities: market.nearbyCities,
           issueDate: args.issueDate,
           sectionType,
+          dataSources: sectionSources,
         }),
         createdAt: now,
         updatedAt: now,

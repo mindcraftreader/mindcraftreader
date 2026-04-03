@@ -2,24 +2,29 @@ import { internalAction } from "../_generated/server";
 import { v } from "convex/values";
 import { api } from "../_generated/api";
 
-async function postSlack(
-  webhookEnvVar: string,
-  payload: Record<string, unknown>
-) {
-  const url = process.env[webhookEnvVar];
-  if (!url) {
-    console.log(`[notify] ${webhookEnvVar} not set, skipping Slack notification`);
+async function postSlack(channel: string, payload: Record<string, unknown>) {
+  const token = process.env.SLACK_BOT_TOKEN;
+  if (!token) {
+    console.log(`[notify] SLACK_BOT_TOKEN not set, skipping: ${channel}`);
     return;
   }
 
   try {
-    await fetch(url, {
+    const body: Record<string, unknown> = { channel, ...payload };
+    const res = await fetch("https://slack.com/api/chat.postMessage", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload),
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify(body),
     });
+    const data = await res.json();
+    if (!data.ok) {
+      console.error(`[notify] Slack error (${channel}): ${data.error}`);
+    }
   } catch (error) {
-    console.error(`[notify] Slack post failed (${webhookEnvVar}):`, error);
+    console.error(`[notify] Slack post failed (${channel}):`, error);
   }
 }
 
@@ -31,11 +36,21 @@ export const requestApproval = internalAction({
     });
     if (!run) return;
 
-    const market = await ctx.runQuery(api.markets.getBySlug, {
-      slug: "",
-    });
+    const market = await ctx.runQuery(api.markets.getBySlug, { slug: "" });
+    // We don't have the slug easily here, but the run has marketId
 
-    await postSlack("SLACK_PUBLISH_WEBHOOK", {
+    const details = [
+      run.previewUrl ? `*Preview:* ${run.previewUrl}` : null,
+      run.assembledPdfUrl ? `*PDF:* ${run.assembledPdfUrl}` : null,
+      `*Sections:* ${run.sectionsTotal}`,
+      run.revisionCount > 0
+        ? `*Revision round:* ${run.revisionCount}`
+        : null,
+    ]
+      .filter(Boolean)
+      .join("\n");
+
+    await postSlack("#newsroom-publish", {
       blocks: [
         {
           type: "header",
@@ -46,19 +61,7 @@ export const requestApproval = internalAction({
         },
         {
           type: "section",
-          text: {
-            type: "mrkdwn",
-            text: [
-              run.previewUrl ? `*Preview:* ${run.previewUrl}` : null,
-              run.assembledPdfUrl ? `*PDF:* ${run.assembledPdfUrl}` : null,
-              `*Sections:* ${run.sectionsTotal}`,
-              run.revisionCount > 0
-                ? `*Revision round:* ${run.revisionCount}`
-                : null,
-            ]
-              .filter(Boolean)
-              .join("\n"),
-          },
+          text: { type: "mrkdwn", text: details },
         },
         {
           type: "actions",
@@ -84,6 +87,23 @@ export const requestApproval = internalAction({
   },
 });
 
+export const stageTransition = internalAction({
+  args: {
+    pipelineRunId: v.id("pipelineRuns"),
+    marketSlug: v.string(),
+    fromStage: v.string(),
+    toStage: v.string(),
+    detail: v.optional(v.string()),
+  },
+  handler: async (_ctx, args) => {
+    const msg = args.detail
+      ? `*${args.marketSlug}* ${args.fromStage} → *${args.toStage}* — ${args.detail}`
+      : `*${args.marketSlug}* ${args.fromStage} → *${args.toStage}*`;
+
+    await postSlack("#newsroom-pipeline", { text: msg });
+  },
+});
+
 export const pipelineComplete = internalAction({
   args: { pipelineRunId: v.id("pipelineRuns") },
   handler: async (ctx, args) => {
@@ -92,8 +112,8 @@ export const pipelineComplete = internalAction({
     });
     if (!run) return;
 
-    await postSlack("SLACK_PUBLISH_WEBHOOK", {
-      text: `${run.issueDate} — Distribution complete. All platforms delivered.`,
+    await postSlack("#newsroom-publish", {
+      text: `✓ *${run.issueDate}* — Distribution complete. All platforms delivered.`,
     });
   },
 });
@@ -109,8 +129,17 @@ export const jobExhausted = internalAction({
     });
     if (!job) return;
 
-    await postSlack("SLACK_ALERTS_WEBHOOK", {
-      text: `ALERT: ${job.agentRole} failed ${job.maxAttempts}x on ${job.sectionType}/${job.phase} for ${job.issueDate}. Last error: ${job.error ?? "unknown"}. Manual action needed.`,
+    await postSlack("#newsroom-alerts", {
+      text: `ALERT: *${job.agentRole}* failed ${job.maxAttempts}x on *${job.sectionType}/${job.phase}* for ${job.issueDate}.\nLast error: ${job.error ?? "unknown"}\nManual action needed.`,
+    });
+  },
+});
+
+export const weeklyKickoff = internalAction({
+  args: { marketCount: v.number(), issueDate: v.string() },
+  handler: async (_ctx, args) => {
+    await postSlack("#newsroom-pipeline", {
+      text: `Pipeline kicked off for *${args.marketCount} markets*, issue date ${args.issueDate}. Research jobs queued.`,
     });
   },
 });

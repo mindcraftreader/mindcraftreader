@@ -211,6 +211,27 @@ export default defineSchema({
     .index("by_status", ["outreachStatus"])
     .index("by_market_status", ["marketId", "outreachStatus"]),
 
+  // ── DATA SOURCE REGISTRY ───────────────────────────
+
+  marketSources: defineTable({
+    marketId: v.id("markets"),
+    sectionType: v.string(),
+    sourceName: v.string(),
+    sourceUrl: v.string(),
+    plugin: v.string(),
+    category: v.string(),
+    enabled: v.boolean(),
+    selectors: v.optional(v.string()),
+    dateFormat: v.optional(v.string()),
+    apiParams: v.optional(v.string()),
+    notes: v.optional(v.string()),
+    priority: v.number(),
+    createdAt: v.number(),
+  })
+    .index("by_market", ["marketId"])
+    .index("by_market_section", ["marketId", "sectionType"])
+    .index("by_section", ["sectionType"]),
+
   // ── PIPELINE ORCHESTRATION TABLES ─────────────────
 
   pipelineRuns: defineTable({
