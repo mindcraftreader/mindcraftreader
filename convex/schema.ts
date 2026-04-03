@@ -2,6 +2,8 @@ import { defineSchema, defineTable } from "convex/server";
 import { v } from "convex/values";
 
 export default defineSchema({
+  // ── READER APP TABLES ─────────────────────────────
+
   markets: defineTable({
     slug: v.string(),
     name: v.string(),
@@ -13,6 +15,9 @@ export default defineSchema({
     senderName: v.string(),
     isActive: v.boolean(),
     subscriberCount: v.number(),
+    defaultSections: v.optional(v.array(v.string())),
+    publishDay: v.optional(v.string()),
+    publishTimeUtc: v.optional(v.string()),
     createdAt: v.number(),
   })
     .index("by_slug", ["slug"])
@@ -38,6 +43,7 @@ export default defineSchema({
     pdfUrl: v.optional(v.string()),
     canonicalUrl: v.optional(v.string()),
     ogImageUrl: v.optional(v.string()),
+    pipelineRunId: v.optional(v.id("pipelineRuns")),
     createdAt: v.number(),
   })
     .index("by_market", ["marketId"])
@@ -61,6 +67,11 @@ export default defineSchema({
     ),
     wordCount: v.number(),
     measuredHeight: v.optional(v.number()),
+    researchJobId: v.optional(v.id("sectionJobs")),
+    writingJobId: v.optional(v.id("sectionJobs")),
+    editingJobId: v.optional(v.id("sectionJobs")),
+    reviewJobId: v.optional(v.id("sectionJobs")),
+    confidenceScore: v.optional(v.number()),
     createdAt: v.number(),
     updatedAt: v.number(),
   })
@@ -199,4 +210,115 @@ export default defineSchema({
     .index("by_market", ["marketId"])
     .index("by_status", ["outreachStatus"])
     .index("by_market_status", ["marketId", "outreachStatus"]),
+
+  // ── PIPELINE ORCHESTRATION TABLES ─────────────────
+
+  pipelineRuns: defineTable({
+    marketId: v.id("markets"),
+    issueDate: v.string(),
+    issueId: v.optional(v.id("issues")),
+    stage: v.union(
+      v.literal("created"),
+      v.literal("research"),
+      v.literal("writing"),
+      v.literal("editing"),
+      v.literal("review"),
+      v.literal("assembly"),
+      v.literal("pending_approval"),
+      v.literal("revision"),
+      v.literal("approved"),
+      v.literal("distributing"),
+      v.literal("complete"),
+      v.literal("failed")
+    ),
+    priority: v.number(),
+    sectionsTotal: v.number(),
+    researchComplete: v.number(),
+    writingComplete: v.number(),
+    editingComplete: v.number(),
+    reviewComplete: v.number(),
+    assembledHtml: v.optional(v.string()),
+    assembledPdfUrl: v.optional(v.string()),
+    previewUrl: v.optional(v.string()),
+    approvalRequestedAt: v.optional(v.number()),
+    approvedBy: v.optional(v.string()),
+    approvedAt: v.optional(v.number()),
+    rejectionNotes: v.optional(v.string()),
+    revisionCount: v.number(),
+    distributionStartedAt: v.optional(v.number()),
+    completedAt: v.optional(v.number()),
+    error: v.optional(v.string()),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_market_date", ["marketId", "issueDate"])
+    .index("by_stage", ["stage"])
+    .index("by_stage_priority", ["stage", "priority"])
+    .index("by_market_stage", ["marketId", "stage"]),
+
+  sectionJobs: defineTable({
+    pipelineRunId: v.id("pipelineRuns"),
+    marketId: v.id("markets"),
+    issueDate: v.string(),
+    sectionType: v.string(),
+    phase: v.union(
+      v.literal("research"),
+      v.literal("writing"),
+      v.literal("editing"),
+      v.literal("review"),
+      v.literal("assembly"),
+      v.literal("distribution"),
+      v.literal("revision")
+    ),
+    status: v.union(
+      v.literal("pending"),
+      v.literal("claimed"),
+      v.literal("running"),
+      v.literal("complete"),
+      v.literal("failed"),
+      v.literal("cancelled")
+    ),
+    agentRole: v.string(),
+    agentId: v.optional(v.string()),
+    claimedAt: v.optional(v.number()),
+    startedAt: v.optional(v.number()),
+    completedAt: v.optional(v.number()),
+    heartbeatAt: v.optional(v.number()),
+    inputData: v.optional(v.string()),
+    revisionNotes: v.optional(v.string()),
+    outputData: v.optional(v.string()),
+    outputHtml: v.optional(v.string()),
+    confidenceScore: v.optional(v.number()),
+    editIssues: v.optional(v.string()),
+    wordCount: v.optional(v.number()),
+    attempt: v.number(),
+    maxAttempts: v.number(),
+    error: v.optional(v.string()),
+    timeoutMs: v.number(),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_pipeline", ["pipelineRunId"])
+    .index("by_pipeline_phase", ["pipelineRunId", "phase"])
+    .index("by_status_role", ["status", "agentRole"])
+    .index("by_status_phase", ["status", "phase"])
+    .index("by_agent", ["agentId"])
+    .index("by_market_date_section", ["marketId", "issueDate", "sectionType", "phase"]),
+
+  agentEvents: defineTable({
+    pipelineRunId: v.optional(v.id("pipelineRuns")),
+    sectionJobId: v.optional(v.id("sectionJobs")),
+    eventType: v.string(),
+    agentRole: v.optional(v.string()),
+    agentId: v.optional(v.string()),
+    marketSlug: v.optional(v.string()),
+    issueDate: v.optional(v.string()),
+    summary: v.string(),
+    metadata: v.optional(v.string()),
+    createdAt: v.number(),
+  })
+    .index("by_pipeline", ["pipelineRunId", "createdAt"])
+    .index("by_job", ["sectionJobId", "createdAt"])
+    .index("by_type", ["eventType", "createdAt"])
+    .index("by_market", ["marketSlug", "createdAt"]),
 });
